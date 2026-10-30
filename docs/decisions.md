@@ -677,7 +677,6 @@ First-valid-check-in handling prevents duplicate attendance, avoids conflicting 
 - Should a student be allowed to retry automatically after an inconclusive attempt? This must not create duplicate attendance records.
 - What details should be retained for duplicate-attempt logs, and for how long?
 
-
 ## DEC-019 — Exceptions and Manual Overrides
 
 **Status:** Accepted
@@ -697,8 +696,23 @@ Authorized professors may manually approve or reject attendance cases when autom
 - Manual overrides must not bypass authentication, professor authorization, or audit logging.
 
 ### Rationale
-Automated checks can fail because of GPS inaccuracies, unsupported devices, connectivity issues, or unavailable verification infrastructure. Controlled
+Automated checks can fail because of GPS inaccuracies, unsupported devices, connectivity issues, or unavailable verification infrastructure. Controlled overrides provide a fair exception path while discouraging arbitrary attendance changes.
 
+### Consequences
+- The backend must enforce professor authorization and validate every override.
+- The database must support manual-review state and audit records.
+- The professor dashboard must provide a review interface for flagged and inconclusive cases.
+- Attendance records must distinguish automated verification from manual approval.
+- Manual review outcomes must remain separate from the four attendance statuses defined in DEC-017.
+
+### Alternatives Considered
+- **Unrestricted override:** Rejected because changes without justification or auditability create opportunities for misuse.
+- **Review requests only:** Rejected because genuine attendance problems sometimes require an actual correction to the attendance record.
+
+### Open Questions
+- Should a student be allowed to appeal a professor's manual rejection?
+- Should manual overrides require a second approver in a future institutional version?
+- What retention period should apply to audit records?
 
 ## DEC-020 — Application Structure
 
@@ -739,9 +753,12 @@ A modular monolith reduces deployment and integration complexity while preservin
 
 ### Alternatives Considered
 - **Multiple independently deployed services:** Rejected for the MVP because service-to-service communication, deployment, and debugging add unnecessary complexity.
-- **One unstructured application:** Rejected because tightly coupled code would make security-sensitive logic and future changes
+- **One unstructured application:** Rejected because tightly coupled code would make security-sensitive logic and future changes harder to maintain.
 
-
+### Open Questions
+- Which frontend and backend frameworks will be used?
+- Which database will store users, sessions, tokens, attendance, and audit records?
+- Which mechanism will deliver real-time dashboard updates?
 
 ## DEC-021 — Backend Framework
 
@@ -760,8 +777,26 @@ The backend will use Node.js, Express, and TypeScript.
 - Authentication, authorization, session eligibility, token validation, and duplicate prevention must be enforced server-side.
 - Security-sensitive operations must use established, maintained libraries rather than custom cryptographic implementations.
 - Errors must be handled consistently, without exposing stack traces, secrets, raw tokens, or sensitive internal details to clients.
-- Configuration and secrets must be supplied through environment variables or the chosen
+- Configuration and secrets must be supplied through environment variables or the chosen deployment platform's secret-management mechanism. Secrets must not be committed to version control.
+- The backend must use automated tests for critical attendance and security rules.
 
+### Rationale
+Node.js and Express provide a lightweight, flexible foundation suitable for a hackathon MVP. TypeScript improves clarity around API contracts, session states, attendance outcomes, and other security-sensitive data structures. Using TypeScript on both frontend and backend is possible if the frontend stack supports it.
+
+### Consequences
+- The project will use a Node.js-compatible package manager and TypeScript build configuration.
+- Dependencies must be selected and maintained deliberately.
+- Runtime validation, authentication, database integration, logging, and testing require explicit setup.
+- Express does not provide a complete authentication or security architecture automatically; these concerns must be implemented and tested separately.
+
+### Alternatives Considered
+- **Python + FastAPI:** A strong alternative with type-annotated APIs and automatic API documentation.
+- **Java + Spring Boot:** A mature framework with extensive enterprise features, but potentially more setup than needed for this MVP.
+
+### Open Questions
+- Which database and data-access library should be used?
+- Which frontend framework will consume the API?
+- Which real-time communication mechanism will the professor dashboard use?
 
 ## DEC-022 — Database
 
@@ -828,7 +863,31 @@ Event names are provisional and may be refined during API design.
 ### Rules
 - The backend remains the authoritative source of session state, attendance records, and validation outcomes.
 - Socket.IO events notify clients of changes; they do not replace backend validation or database persistence.
-- Clients must authenticate and be authorized before joining session
+- Clients must authenticate and be authorized before joining session-specific rooms or receiving private attendance information.
+- Students may receive only information they are authorized to view. Professor dashboards may receive session-level attendance updates only for sessions they are authorized to manage.
+- Attendance changes must be committed successfully before the corresponding confirmed update is broadcast.
+- Clients must handle disconnections and reconnections gracefully.
+- After reconnecting, clients should retrieve the current authoritative state through an authenticated API rather than assume every event was received.
+- The backend must not trust client-supplied events as proof of attendance, token validity, or authorization.
+- Real-time events must not expose passwords, raw QR tokens, session secrets, or unnecessary precise location data.
+
+### Rationale
+Socket.IO supports event-based updates, room-based communication, and reconnection behavior. This suits a professor dashboard that needs to reflect check-ins and review decisions promptly.
+
+### Consequences
+- The backend must configure Socket.IO alongside Express.
+- Authentication and authorization rules must cover both HTTP endpoints and socket connections.
+- The frontend must handle event subscriptions, reconnection, and state refreshes.
+- Event broadcasting must be coordinated with successful database operations to avoid displaying uncommitted attendance changes.
+
+### Alternatives Considered
+- **Server-Sent Events:** Rejected because Socket.IO provides a convenient event-based model and room support for the MVP.
+- **REST polling:** Rejected because frequent polling introduces unnecessary requests and delays updates between polls.
+
+### Open Questions
+- Which events and payload schemas should be part of the API contract?
+- How should socket authentication and session-room membership be implemented?
+- What fallback behavior is appropriate if real-time updates are temporarily unavailable?
 
 ## DEC-024 — API and Data Contracts
 
